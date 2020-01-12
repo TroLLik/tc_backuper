@@ -1,0 +1,93 @@
+      version: "3.7"
+
+      volumes:
+        prometheus_data: {}
+        grafana_data: {}
+        minio_data: {}
+        tc_data: {}
+      
+      services:
+        tc_backuper:
+          build:
+            context: ./
+          environment:
+            TC_URL: tc-server:8111
+            TC_USER: theuser
+            TC_PASSWD: thepasswd
+            MINIO_URL: minio:9000
+            MINIO_ACCESS_KEY: oi4ieGh9
+            MINIO_SECRET_KEY: quohp9Ohfe0eiNov
+            BACKUP_COUNT: 5
+            BACKUP_INTERVAL: 30
+          links:
+            - tc-server:tc-server
+            - minio:minio
+          depends_on:
+            - tc-server
+            - minio
+          volumes:
+            - tc_data:/tmp/data/teamcity_server/datadir
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /tmp/restored:/tmp/restored
+          restart: unless-stopped            
+
+        tc-server:
+          image: jetbrains/teamcity-server:latest
+          ports:
+            - "8112:8111"
+          volumes:
+            - tc_data:/data/teamcity_server/datadir
+            - /tmp/log_dir:/opt/teamcity/logs
+          restart: always
+
+        minio:
+          image: minio/minio:latest
+          volumes:
+            - minio_data:/data
+          ports:
+            - "9000:9000"
+          environment:
+            MINIO_ACCESS_KEY: oi4ieGh9
+            MINIO_SECRET_KEY: quohp9Ohfe0eiNov
+          command: server /data
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+            interval: 30s
+            timeout: 20s
+            retries: 3
+
+        prometheus:
+          image: prom/prometheus:latest
+          volumes:
+            - ./prometheus/:/etc/prometheus/
+            - prometheus_data:/prometheus
+          command:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+            - '--web.console.templates=/usr/share/prometheus/consoles'
+            - '--storage.tsdb.retention=200h'
+            - '--web.enable-lifecycle'
+          ports:
+            - 9090:9090
+          links:
+            - grafana:grafana
+            - tc_backuper:tc_backuper
+          restart: always
+      
+        grafana:
+          image: grafana/grafana:latest
+          user: "472"
+          container_name: grafana
+          volumes:
+            - grafana_data:/var/lib/grafana
+            - ./grafana/datasources:/etc/grafana/provisioning/datasources
+            - ./grafana/dashboards/prometheus_ds.yml:/etc/grafana/provisioning/dashboards/prometheus_ds.yml
+            - ./grafana/dashboards/tc_backup.json:/var/lib/grafana/dashboards/tc_backup.json
+          environment:
+            - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
+            - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+            - GF_USERS_ALLOW_SIGN_UP=false
+          restart: unless-stopped
+          ports:
+            - 3000:3000
