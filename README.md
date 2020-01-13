@@ -1,4 +1,7 @@
 # TimeCity Backuper
+
+[![Build Status](https://travis-ci.com/TroLLik/tc_backuper.svg?branch=master)](https://travis-ci.com/TroLLik/tc_backuper)
+
 ### Запуск тестов
 * В корне проекта выполнить:
     $ python ./com/tc_backuper/tests/unit.py
